@@ -1,87 +1,124 @@
 import tkinter as tk
 from tkinter import messagebox
 import pandas as pd
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
-# Load student list
+# Load Excel data
 try:
-    student_df = pd.read_excel("student_list.xlsx")
-    student_df.columns = student_df.columns.str.strip()
-    student_df['Roll Number'] = student_df['Roll Number'].astype(str).str.strip()
-    student_df['Name'] = student_df['Name'].astype(str).str.strip()
-    roll_to_name = dict(zip(student_df['Roll Number'], student_df['Name']))
+    df = pd.read_excel("student_list.xlsx")
+    df.columns = df.columns.str.strip()
+    df['Roll Number'] = df['Roll Number'].astype(str).str.strip()
+    df['Name'] = df['Name'].astype(str).str.strip()
 except Exception as e:
-    print("Error loading student_list.xlsx:", e)
-    exit()
+    messagebox.showerror("Error", f"Error loading student_list.xlsx: {e}")
+    df = pd.DataFrame(columns=["Roll Number", "Name"])
 
 entries = []
 
-def fetch_name():
-    roll = roll_var.get().strip()
-    name = roll_to_name.get(roll)
-    if name:
-        name_var.set(name)
-        name_entry.config(state="readonly")
-    else:
-        name_var.set("")
-        name_entry.config(state="normal")
-        messagebox.showinfo("Not Found", f"No name found for Roll Number: {roll}. Please enter manually.")
+def get_name_by_roll(roll):
+    roll = roll.strip()
+    result = df[df["Roll Number"].str.strip().str.upper() == roll.upper()]
+    if not result.empty:
+        return result.iloc[0]["Name"]
+    return ""
 
 def add_entry():
-    name = name_var.get().strip()
-    roll = roll_var.get().strip()
-    slots = slot_var.get().strip()
+    roll = roll_entry.get().strip()
+    name = name_entry.get().strip()
+    slot_input = slot_entry.get().strip()
+    event = event_entry.get().strip()
 
-    if not name or not roll or not slots:
-        messagebox.showerror("Missing Data", "Please fill all fields.")
+    if not roll or not name or not slot_input or not event:
+        messagebox.showerror("Error", "All fields are required.")
         return
 
     try:
-        slot_list = [int(s.strip()) for s in slots.split(",") if s.strip().isdigit()]
-        if not slot_list:
-            raise ValueError
-    except ValueError:
-        messagebox.showerror("Invalid Slots", "Enter numeric slots separated by commas.")
+        slots = [int(s.strip()) for s in slot_input.split(",") if s.strip().isdigit()]
+    except:
+        messagebox.showerror("Error", "Invalid slot format. Use comma-separated numbers like 1,2,3.")
         return
 
-    for slot in slot_list:
-        entries.append([name, roll, slot])
+    for slot in slots:
+        entries.append({
+            "Roll Number": roll,
+            "Name": name,
+            "Slot": slot,
+            "Event": event,
+            "Date": datetime.now().strftime("%d-%m-%Y")
+        })
 
-    name_var.set("")
-    roll_var.set("")
-    slot_var.set("")
-    name_entry.config(state="readonly")
-    messagebox.showinfo("Success", f"{len(slot_list)} slot(s) added for {name}.")
+    roll_entry.delete(0, tk.END)
+    name_entry.delete(0, tk.END)
+    slot_entry.delete(0, tk.END)
+    messagebox.showinfo("Success", "Entry added successfully!")
 
-def export_excel():
+def get_name():
+    roll = roll_entry.get().strip()
+    name = get_name_by_roll(roll)
+    if name:
+        name_entry.delete(0, tk.END)
+        name_entry.insert(0, name)
+    else:
+        messagebox.showwarning("Not Found", "Roll Number not found. Enter name manually.")
+
+def export_to_excel():
     if not entries:
-        messagebox.showwarning("No Data", "No entries to export.")
+        messagebox.showerror("Error", "No entries to export.")
         return
-    df = pd.DataFrame(entries, columns=["Name", "Roll Number", "Slot"])
-    df.to_excel("od_output.xlsx", index=False)
-    messagebox.showinfo("Exported", "OD list saved to od_output.xlsx")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OD List"
+
+    ws.merge_cells("A1:F1")
+    ws["A1"] = f"{event_entry.get().strip()} - OD List"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    headers = ["S.no", "Roll Number", "Name", "Slot", "Event", "Date"]
+    ws.append(headers)
+
+    for i, entry in enumerate(entries, start=1):
+        ws.append([
+            i,
+            entry["Roll Number"],
+            entry["Name"],
+            entry["Slot"],
+            entry["Event"],
+            entry["Date"]
+        ])
+
+    filename = f"{event_entry.get().strip().replace(' ', '_')}_OD_List_{datetime.now().strftime('%d%m%Y')}.xlsx"
+    wb.save(filename)
+    messagebox.showinfo("Success", f"Excel saved as {filename}")
 
 # GUI
 root = tk.Tk()
-root.title("OD Entry Tool")
-root.geometry("420x280")
+root.title("OD Entry App")
+root.geometry("500x400")
 
-tk.Label(root, text="Roll Number:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
-tk.Label(root, text="Name:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
-tk.Label(root, text="Slots (comma-separated):").grid(row=2, column=0, padx=10, pady=5, sticky="e")
+tk.Label(root, text="Roll Number:").pack()
+roll_entry = tk.Entry(root)
+roll_entry.pack()
 
-roll_var = tk.StringVar()
-name_var = tk.StringVar()
-slot_var = tk.StringVar()
+tk.Button(root, text="Get Name", command=get_name).pack(pady=2)
 
-tk.Entry(root, textvariable=roll_var, width=30).grid(row=0, column=1, padx=10, pady=5)
+tk.Label(root, text="Name:").pack()
+name_entry = tk.Entry(root)
+name_entry.pack()
 
-name_entry = tk.Entry(root, textvariable=name_var, width=30, state="readonly")
-name_entry.grid(row=1, column=1, padx=10, pady=5)
+tk.Label(root, text="Event Name:").pack()
+event_entry = tk.Entry(root)
+event_entry.pack()
 
-tk.Entry(root, textvariable=slot_var, width=30).grid(row=2, column=1, padx=10, pady=5)
+tk.Label(root, text="Enter Slots (e.g. 2,3,4):").pack()
+slot_entry = tk.Entry(root)
+slot_entry.pack()
 
-tk.Button(root, text="Get Name", width=15, command=fetch_name).grid(row=0, column=2, padx=5)
-tk.Button(root, text="Add Entry", width=15, command=add_entry).grid(row=3, column=0, columnspan=2, pady=15)
-tk.Button(root, text="Export to Excel", width=15, command=export_excel).grid(row=4, column=0, columnspan=2)
+tk.Button(root, text="Add Entry", command=add_entry).pack(pady=10)
+tk.Button(root, text="Export to Excel", command=export_to_excel).pack(pady=10)
 
 root.mainloop()
